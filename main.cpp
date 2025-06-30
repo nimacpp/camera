@@ -1,66 +1,63 @@
 #include <QApplication>
-#include <QCamera>
-#include <QCameraInfo>
-#include <QCameraViewfinder>
-#include <QCameraImageCapture>
-#include <QPushButton>
+#include <QTimer>
+#include <QLabel>
 #include <QVBoxLayout>
-#include <QWidget>
-#include <QShortcut>
-#include <QDateTime>
-#include <QDir>
-#include <QMessageBox>
+#include <QPixmap>
+#include <QImage>
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/objdetect.hpp>
+
+QImage Mat2QImage(const cv::Mat &mat) {
+    if (mat.type() == CV_8UC3) {
+        return QImage(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_RGB888).rgbSwapped();
+    } else if (mat.type() == CV_8UC1) {
+        return QImage(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_Grayscale8);
+    }
+    return QImage();
+}
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
-    // Main window
-    QWidget window;
-    window.setWindowTitle("Camera App");
+    QLabel videoLabel;
+    videoLabel.setWindowTitle("Face Detection");
+    videoLabel.resize(640, 480);
 
-    // Camera setup
-    QCamera *camera = new QCamera(QCameraInfo::defaultCamera());
-    QCameraViewfinder *viewfinder = new QCameraViewfinder;
-    camera->setViewfinder(viewfinder);
+    // Load Haar cascade
+    cv::CascadeClassifier faceCascade;
+    faceCascade.load("frontalface.xml");
 
-    // Image capture
-    QCameraImageCapture *imageCapture = new QCameraImageCapture(camera);
+    // Open camera
+    cv::VideoCapture cap(0);
+    if (!cap.isOpened()) {
+        qWarning("Camera not opened");
+        return -1;
+    }
 
-    // Capture button
-    QPushButton *captureButton = new QPushButton("Capture Image");
+    QTimer timer;
+    QObject::connect(&timer, &QTimer::timeout, [&]() {
+        cv::Mat frame;
+        cap >> frame;
+        if (frame.empty()) return;
 
-    // Capture action (used by both button and shortcuts)
-    auto captureImage = [&]() {
-        QString filename = QDir::homePath() + "/Pictures/image_" +
-                           QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss") + ".jpg";
-        imageCapture->capture(filename);
-    };
+        std::vector<cv::Rect> faces;
+        cv::Mat gray;
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        faceCascade.detectMultiScale(gray, faces);
 
-    QObject::connect(captureButton, &QPushButton::clicked, captureImage);
+        // Draw rectangles on faces
+        for (const auto& face : faces) {
+            cv::rectangle(frame, face, cv::Scalar(0, 255, 0), 2);
+            cv::putText(frame, "Face", cv::Point(face.x, face.y - 10),
+            cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+        }
 
-    // Shortcuts
-    QShortcut *spaceShortcut = new QShortcut(QKeySequence(Qt::Key_Space), &window);
-    QObject::connect(spaceShortcut, &QShortcut::activated, captureImage);
+        videoLabel.setPixmap(QPixmap::fromImage(Mat2QImage(frame)).scaled(videoLabel.size(), Qt::KeepAspectRatio));
+    });
 
-    QShortcut *ctrlSShortcut = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_S), &window);
-    QObject::connect(ctrlSShortcut, &QShortcut::activated, captureImage);
-
-    // Show confirmation when image is saved
-    QObject::connect(imageCapture, &QCameraImageCapture::imageSaved,
-                     [](int, const QString &fileName) {
-                         QMessageBox::information(nullptr, "Image Saved", "Saved to:\n" + fileName);
-                     });
-
-    // Layout
-    QVBoxLayout *layout = new QVBoxLayout;
-    layout->addWidget(viewfinder);
-    layout->addWidget(captureButton);
-    window.setLayout(layout);
-
-    // Start
-    camera->start();
-    window.resize(800, 600);
-    window.show();
+    timer.start(30);  // ~33 fps
+    videoLabel.show();
 
     return app.exec();
 }
