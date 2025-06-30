@@ -101,6 +101,5 @@ MIT License
 
 ## Contact
 
-Created by [Your Name or GitHub Handle]
+Created by nimacpp
 
-```
