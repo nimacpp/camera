@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=CameraApp
+Exec=/full/path/to/cameraapp
+Icon=icon.jpg
+Type=Application
+Categories=Utility;
+Terminal=false
